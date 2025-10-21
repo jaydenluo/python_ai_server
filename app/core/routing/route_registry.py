@@ -1,182 +1,186 @@
 """
-路由注册器
-自动注册注解路由到FastAPI
+FastAPI路由注册器
+将装饰器收集的路由信息注册到FastAPI应用
 """
 
 from typing import List, Dict, Any
-from fastapi import FastAPI, APIRouter
-from app.core.routing.route_decorators import get_routes, RouteInfo, HTTPMethod
-from app.core.middleware.base import Request, Response
-import asyncio
+from fastapi import FastAPI, APIRouter, Request, Response, Depends
+from app.core.routing.route_decorators import get_routes, RouteInfo, HTTPMethod, auto_discover_controllers as scan_controllers
+import inspect
+from functools import wraps
 
 
-class RouteRegistry:
-    """路由注册器"""
+class FastAPIRouteRegistry:
+    """FastAPI路由注册器 - 简化版"""
     
     def __init__(self, app: FastAPI):
         self.app = app
-        self.registered_routes: List[RouteInfo] = []
+        self.registered_controllers = set()
+        self.controller_instances = {}  # 保存控制器实例
     
-    def register_controller_routes(self, controller_class: Any):
-        """注册控制器路由"""
-        # 获取控制器实例
-        controller = controller_class()
+    def register_from_decorators(self):
+        """从装饰器系统注册所有路由到FastAPI"""
+        # 先执行自动扫描
+        scan_controllers()
         
-        # 获取控制器信息
-        prefix = getattr(controller_class, '_prefix', '')
-        version = getattr(controller_class, '_version', 'v1')
-        middleware = getattr(controller_class, '_middleware', [])
+        # 获取所有路由信息
+        routes = get_routes()
         
-        # 创建API路由器
-        router = APIRouter(prefix=f"/api/{version}{prefix}")
+        # 按控制器分组
+        controller_routes = {}
+        for route in routes:
+            controller_name = route.handler.__qualname__.split('.')[0]
+            if controller_name not in controller_routes:
+                controller_routes[controller_name] = []
+            controller_routes[controller_name].append(route)
         
-        # 注册路由
-        for route_info in get_routes():
-            if hasattr(controller, route_info.handler.__name__):
-                # 获取处理方法
-                handler_method = getattr(controller, route_info.handler.__name__)
+        # 为每个控制器创建路由器
+        for controller_name, routes_list in controller_routes.items():
+            if not routes_list:
+                continue
                 
-                # 注册到FastAPI路由器
-                if route_info.method == HTTPMethod.GET:
-                    router.get(route_info.path, name=route_info.name)(handler_method)
-                elif route_info.method == HTTPMethod.POST:
-                    router.post(route_info.path, name=route_info.name)(handler_method)
-                elif route_info.method == HTTPMethod.PUT:
-                    router.put(route_info.path, name=route_info.name)(handler_method)
-                elif route_info.method == HTTPMethod.PATCH:
-                    router.patch(route_info.path, name=route_info.name)(handler_method)
-                elif route_info.method == HTTPMethod.DELETE:
-                    router.delete(route_info.path, name=route_info.name)(handler_method)
-                elif route_info.method == HTTPMethod.OPTIONS:
-                    router.options(route_info.path, name=route_info.name)(handler_method)
-                elif route_info.method == HTTPMethod.HEAD:
-                    router.head(route_info.path, name=route_info.name)(handler_method)
-        
-        # 将路由器添加到主应用
-        self.app.include_router(router)
-        
-        # 记录已注册的路由
-        self.registered_routes.extend(get_routes())
-    
-    def register_all_routes(self, controllers: List[Any]):
-        """注册所有控制器路由"""
-        for controller_class in controllers:
-            self.register_controller_routes(controller_class)
-    
-    def get_registered_routes(self) -> List[RouteInfo]:
-        """获取已注册的路由"""
-        return self.registered_routes
-    
-    def get_route_by_name(self, name: str) -> RouteInfo:
-        """根据名称获取路由"""
-        for route in self.registered_routes:
-            if route.name == name:
-                return route
-        return None
-    
-    def generate_url(self, name: str, **params) -> str:
-        """生成URL"""
-        route = self.get_route_by_name(name)
-        if not route:
-            raise ValueError(f"Route '{name}' not found")
-        
-        url = f"/api/{route.version}{route.prefix}{route.path}"
-        
-        # 替换路径参数
-        for key, value in params.items():
-            url = url.replace(f"{{{key}}}", str(value))
-        
-        return url
-
-
-class AutoRouteRegistry:
-    """自动路由注册器"""
-    
-    def __init__(self, app: FastAPI):
-        self.app = app
-        self.registry = RouteRegistry(app)
-        self.controllers: List[Any] = []
-    
-    def register_controller(self, controller_class: Any):
-        """注册控制器"""
-        self.controllers.append(controller_class)
-        self.registry.register_controller_routes(controller_class)
-    
-    def register_controllers(self, controllers: List[Any]):
-        """批量注册控制器"""
-        for controller_class in controllers:
-            self.register_controller(controller_class)
-    
-    def auto_discover_controllers(self, module_path: str):
-        """自动发现控制器"""
-        import importlib
-        import inspect
-        
-        try:
-            module = importlib.import_module(module_path)
+            # 获取第一个路由的信息作为控制器信息
+            first_route = routes_list[0]
+            prefix = first_route.prefix
+            version = first_route.version
+            tags = first_route.tags or [controller_name]  # 使用自定义tags或控制器名称
             
-            # 查找所有控制器类
-            for name, obj in inspect.getmembers(module):
-                if (inspect.isclass(obj) and 
-                    hasattr(obj, '_prefix') and 
-                    hasattr(obj, '_version')):
-                    self.register_controller(obj)
-                    
-        except ImportError as e:
-            print(f"无法导入模块 {module_path}: {e}")
+            # 创建API路由器
+            # 直接使用prefix，不添加/api前缀（让控制器自己指定完整路径）
+            router = APIRouter(
+                prefix=prefix,
+                tags=tags
+            )
+            
+            # 注册路由到FastAPI路由器
+            for route in routes_list:
+                self._register_single_route(router, route)
+            
+            # 将路由器添加到主应用
+            self.app.include_router(router)
+            
+            # 简化日志：不打印每个控制器的注册信息
+            # print(f"✅ 注册控制器: {controller_name} ({len(routes_list)} 个路由)")
     
-    def get_all_routes(self) -> List[Dict[str, Any]]:
+    def _register_single_route(self, router: APIRouter, route: RouteInfo):
+        """注册单个路由到FastAPI路由器"""
+        # 根据HTTP方法注册路由
+        method_map = {
+            HTTPMethod.GET: router.get,
+            HTTPMethod.POST: router.post,
+            HTTPMethod.PUT: router.put,
+            HTTPMethod.PATCH: router.patch,
+            HTTPMethod.DELETE: router.delete,
+            HTTPMethod.OPTIONS: router.options,
+            HTTPMethod.HEAD: router.head,
+        }
+        
+        if route.method in method_map:
+            # 获取控制器类
+            handler_qualname = route.handler.__qualname__
+            if '.' in handler_qualname:
+                # 实例方法
+                class_name = handler_qualname.split('.')[0]
+                method_name = route.handler.__name__
+                
+                # 从handler的__globals__中找到控制器类
+                controller_class = None
+                if hasattr(route.handler, '__globals__'):
+                    controller_class = route.handler.__globals__.get(class_name)
+                
+                # 使用完整标识符（模块 + 类名）作为键，避免同名类冲突
+                module_name = route.handler.__module__ if hasattr(route.handler, '__module__') else ''
+                full_class_key = f"{module_name}.{class_name}"
+                
+                if controller_class and full_class_key not in self.controller_instances:
+                    # 创建控制器实例（单例）
+                    self.controller_instances[full_class_key] = controller_class()
+                
+                if full_class_key in self.controller_instances:
+                    # 直接使用绑定的方法
+                    handler = getattr(self.controller_instances[full_class_key], method_name)
+                else:
+                    handler = route.handler
+            else:
+                # 函数：直接使用
+                handler = route.handler
+            
+            # 直接使用router的add_api_route方法注册
+            # FastAPI会自动识别Request类型参数为依赖注入
+            router.add_api_route(
+                path=route.path,
+                endpoint=handler,
+                methods=[route.method.value],
+                name=route.name,
+                summary=getattr(route.handler, '_api_doc', {}).get('summary', ''),
+                description=getattr(route.handler, '_api_doc', {}).get('description', ''),
+                tags=getattr(route.handler, '_api_doc', {}).get('tags', []),
+                response_model=None  # 允许自定义Response，不指定response_class让FastAPI自动处理
+            )
+    
+    def get_route_info(self) -> List[Dict[str, Any]]:
         """获取所有路由信息"""
         routes = []
-        for route in self.registry.get_registered_routes():
+        for route in get_routes():
             routes.append({
                 "name": route.name,
                 "method": route.method.value,
                 "path": f"/api/{route.version}{route.prefix}{route.path}",
-                "handler": route.handler.__name__,
-                "middleware": route.middleware
+                "handler": f"{route.handler.__qualname__}",
+                "middleware": route.middleware,
+                "permissions": getattr(route.handler, '_permissions', [])
             })
         return routes
     
     def print_routes(self):
-        """打印所有路由"""
-        print("\n=== 注册的路由 ===")
-        for route in self.get_all_routes():
-            print(f"{route['method']:6} {route['path']:30} -> {route['handler']} ({route['name']})")
-        print("=" * 50)
+        """打印所有路由信息"""
+        print("\n" + "="*80)
+        print("🛣️  已注册的路由")
+        print("="*80)
+        
+        routes = self.get_route_info()
+        for i, route in enumerate(routes, 1):
+            method = route['method']
+            path = route['path']
+            handler = route['handler']
+            name = route['name']
+            
+            print(f"{i:3d}. {method:6} {path:40} -> {handler}")
+            if route['permissions']:
+                print(f"     🔒 权限: {', '.join(route['permissions'])}")
+            if route['middleware']:
+                print(f"     🔧 中间件: {', '.join(route['middleware'])}")
+            print()
+        
+        print(f"✅ 总计: {len(routes)} 个路由")
+        print("="*80)
 
 
-# 全局路由注册器实例
-auto_registry = None
+# 全局注册器实例
+_registry = None
 
 
-def init_auto_registry(app: FastAPI):
-    """初始化自动路由注册器"""
-    global auto_registry
-    auto_registry = AutoRouteRegistry(app)
-    return auto_registry
+def init_fastapi_registry(app: FastAPI) -> FastAPIRouteRegistry:
+    """初始化FastAPI路由注册器"""
+    global _registry
+    _registry = FastAPIRouteRegistry(app)
+    return _registry
 
 
-def get_auto_registry() -> AutoRouteRegistry:
-    """获取自动路由注册器"""
-    if auto_registry is None:
-        raise RuntimeError("自动路由注册器未初始化")
-    return auto_registry
+def get_fastapi_registry() -> FastAPIRouteRegistry:
+    """获取FastAPI路由注册器"""
+    if _registry is None:
+        raise RuntimeError("FastAPI路由注册器未初始化，请先调用 init_fastapi_registry(app)")
+    return _registry
 
 
-def register_controller(controller_class: Any):
-    """注册控制器（便捷函数）"""
-    registry = get_auto_registry()
-    registry.register_controller(controller_class)
+def register_all_routes():
+    """注册所有路由到FastAPI（便捷函数）"""
+    registry = get_fastapi_registry()
+    registry.register_from_decorators()
 
 
-def register_controllers(controllers: List[Any]):
-    """批量注册控制器（便捷函数）"""
-    registry = get_auto_registry()
-    registry.register_controllers(controllers)
-
-
-def auto_discover_controllers(module_path: str):
-    """自动发现控制器（便捷函数）"""
-    registry = get_auto_registry()
-    registry.auto_discover_controllers(module_path)
+def print_all_routes():
+    """打印所有路由信息（便捷函数）"""
+    registry = get_fastapi_registry()
+    registry.print_routes()

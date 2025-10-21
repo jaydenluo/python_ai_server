@@ -1,0 +1,126 @@
+"""
+TTS服务提供商配置模型
+"""
+
+from datetime import datetime
+from typing import Optional, Dict, Any
+from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, JSON
+from app.core.orm.models import BaseModel
+
+
+class TTSProviderConfig(BaseModel):
+    """TTS服务提供商配置模型"""
+    
+    __tablename__ = "tts_provider_configs"
+    
+    # 基本信息
+    provider = Column(String(50), primary_key=True, comment="提供商名称")
+    display_name = Column(String(100), nullable=False, comment="显示名称")
+    description = Column(Text, nullable=True, comment="描述")
+    
+    # API配置
+    api_key = Column(String(500), nullable=True, comment="API密钥")
+    api_secret = Column(String(500), nullable=True, comment="API密钥")
+    base_url = Column(String(500), nullable=True, comment="API基础URL")
+    
+    # 服务配置
+    timeout = Column(Integer, default=30, comment="请求超时时间(秒)")
+    retry_count = Column(Integer, default=3, comment="重试次数")
+    rate_limit = Column(Integer, default=100, comment="每分钟请求限制")
+    
+    # 功能配置
+    enabled = Column(Boolean, default=True, comment="是否启用")
+    enable_cache = Column(Boolean, default=True, comment="是否启用缓存")
+    cache_ttl = Column(Integer, default=3600, comment="缓存过期时间(秒)")
+    
+    # 支持的功能
+    supported_formats = Column(JSON, nullable=True, comment="支持的音频格式")
+    supported_voices = Column(JSON, nullable=True, comment="支持的音色")
+    max_text_length = Column(Integer, default=1000, comment="最大文本长度")
+    
+    # 价格配置
+    price_per_character = Column(String(20), nullable=True, comment="每字符价格")
+    free_quota = Column(Integer, default=0, comment="免费配额")
+    
+    # 状态信息
+    status = Column(String(20), default="active", comment="配置状态")
+    last_health_check = Column(DateTime, nullable=True, comment="最后健康检查时间")
+    health_status = Column(String(20), default="unknown", comment="健康状态")
+    
+    # 时间信息
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    
+    # 扩展配置
+    extra_config = Column(JSON, nullable=True, comment="扩展配置")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "provider": self.provider,
+            "display_name": self.display_name,
+            "description": self.description,
+            "api_key": self.api_key,
+            "api_secret": self.api_secret,
+            "base_url": self.base_url,
+            "timeout": self.timeout,
+            "retry_count": self.retry_count,
+            "rate_limit": self.rate_limit,
+            "enabled": self.enabled,
+            "enable_cache": self.enable_cache,
+            "cache_ttl": self.cache_ttl,
+            "supported_formats": self.supported_formats,
+            "supported_voices": self.supported_voices,
+            "max_text_length": self.max_text_length,
+            "price_per_character": self.price_per_character,
+            "free_quota": self.free_quota,
+            "status": self.status,
+            "last_health_check": self.last_health_check.isoformat() if self.last_health_check else None,
+            "health_status": self.health_status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "extra_config": self.extra_config
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TTSProviderConfig":
+        """从字典创建实例"""
+        config = cls()
+        for key, value in data.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+        return config
+    
+    def update_health_status(self, status: str):
+        """更新健康状态"""
+        self.health_status = status
+        self.last_health_check = datetime.utcnow()
+    
+    def is_healthy(self) -> bool:
+        """检查服务是否健康"""
+        return self.health_status == "healthy"
+    
+    def is_enabled(self) -> bool:
+        """检查服务是否启用"""
+        return self.enabled and self.status == "active"
+    
+    def get_supported_formats(self) -> list:
+        """获取支持的音频格式"""
+        return self.supported_formats or []
+    
+    def get_supported_voices(self) -> list:
+        """获取支持的音色"""
+        return self.supported_voices or []
+    
+    def has_api_credentials(self) -> bool:
+        """检查是否有API凭证"""
+        return bool(self.api_key)
+    
+    def mask_sensitive_info(self) -> Dict[str, Any]:
+        """返回脱敏的配置信息"""
+        data = self.to_dict()
+        if data.get("api_key"):
+            data["api_key"] = data["api_key"][:8] + "..." + data["api_key"][-4:]
+        if data.get("api_secret"):
+            data["api_secret"] = data["api_secret"][:8] + "..." + data["api_secret"][-4:]
+        return data

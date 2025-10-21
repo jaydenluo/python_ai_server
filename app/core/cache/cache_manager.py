@@ -418,3 +418,17 @@ cache = CacheManager()
 # 添加默认驱动
 cache.add_driver("memory", MemoryCache())
 cache.add_driver("file", FileCache())
+
+# 尝试添加Redis驱动
+try:
+    from .redis_driver import create_redis_cache
+    redis_cache = create_redis_cache()
+    cache.add_driver("redis", redis_cache)
+    cache.set_default_driver("redis")
+except ImportError:
+    # Redis未安装，使用内存缓存
+    pass
+except Exception as e:
+    # Redis连接失败，使用内存缓存
+    import logging
+    logging.getLogger(__name__).warning(f"Redis connection failed: {e}, using memory cache")

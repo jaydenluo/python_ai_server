@@ -5,12 +5,20 @@
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
-from sqlalchemy import create_engine, Engine
+from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 import sqlite3
-import pymongo
-from motor.motor_asyncio import AsyncIOMotorClient
+
+# 可选的MongoDB依赖
+try:
+    import pymongo
+    from motor.motor_asyncio import AsyncIOMotorClient
+    MONGODB_AVAILABLE = True
+except ImportError:
+    pymongo = None
+    AsyncIOMotorClient = None
+    MONGODB_AVAILABLE = False
 
 from app.core.config.settings import DatabaseConfig, DatabaseType
 from .exceptions import DatabaseConnectionError, DatabaseConfigurationError
@@ -63,15 +71,55 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """创建PostgreSQL引擎"""
         connection_string = self.create_connection_string()
         
-        return create_engine(
-            connection_string,
-            poolclass=QueuePool,
-            pool_size=self.config.pool_size,
-            max_overflow=self.config.max_overflow,
-            pool_timeout=self.config.pool_timeout,
-            pool_recycle=self.config.pool_recycle,
-            echo=self.config.echo
-        )
+        try:
+            engine = create_engine(
+                connection_string,
+                poolclass=QueuePool,
+                pool_size=self.config.pool_size,
+                max_overflow=self.config.max_overflow,
+                pool_timeout=self.config.pool_timeout,
+                pool_recycle=self.config.pool_recycle,
+                echo=self.config.echo
+            )
+            
+            # 测试连接（静默）
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            
+            return engine
+            
+        except Exception as e:
+            print(f"\n❌ PostgreSQL连接失败！")
+            print(f"❌ 错误类型: {type(e).__name__}")
+            print(f"❌ 错误详情: {str(e)}")
+            
+            # 分析具体原因
+            error_msg = str(e).lower()
+            if "could not translate host name" in error_msg or "nodename nor servname provided" in error_msg:
+                print(f"\n💡 原因分析: 主机名 '{self.config.host}' 无法解析")
+                print(f"   - 'local' 不是有效的主机名")
+                print(f"   - 应该使用 'localhost' 或 '127.0.0.1'")
+            elif "connection refused" in error_msg:
+                print(f"\n💡 原因分析: PostgreSQL服务未启动或端口不正确")
+                print(f"   - 检查PostgreSQL是否在 {self.config.host}:{self.config.port} 运行")
+                print(f"   - Windows: net start postgresql-x64-[版本]")
+                print(f"   - 或检查端口号是否正确")
+            elif "password authentication failed" in error_msg or "role" in error_msg:
+                print(f"\n💡 原因分析: 用户名或密码错误")
+                print(f"   - PostgreSQL默认用户通常是 'postgres'，不是 'root'")
+                print(f"   - 请检查用户名和密码是否正确")
+            elif "database" in error_msg and "does not exist" in error_msg:
+                print(f"\n💡 原因分析: 数据库 '{self.config.database}' 不存在")
+                print(f"   - 需要先创建数据库")
+                print(f"   - 命令: CREATE DATABASE {self.config.database};")
+            elif "timeout" in error_msg:
+                print(f"\n💡 原因分析: 连接超时")
+                print(f"   - 网络问题或数据库响应慢")
+                print(f"   - 检查防火墙设置")
+            else:
+                print(f"\n💡 未知错误，请检查上述错误详情")
+            
+            raise
 
 
 class MySQLAdapter(DatabaseAdapter):
@@ -237,11 +285,19 @@ def create_adapter(config: DatabaseConfig) -> DatabaseAdapter:
         DatabaseType.SQLITE: SQLiteAdapter,
         DatabaseType.ORACLE: OracleAdapter,
         DatabaseType.SQLSERVER: SQLServerAdapter,
-        DatabaseType.MONGODB: MongoDBAdapter,
     }
+    
+    # 只有安装了MongoDB依赖时才支持MongoDB
+    if MONGODB_AVAILABLE:
+        adapter_map[DatabaseType.MONGODB] = MongoDBAdapter
     
     adapter_class = adapter_map.get(config.type)
     if not adapter_class:
+        if config.type == DatabaseType.MONGODB and not MONGODB_AVAILABLE:
+            raise DatabaseConfigurationError(
+                "MongoDB支持需要安装pymongo和motor依赖。"
+                "请运行: pip install pymongo motor"
+            )
         raise DatabaseConfigurationError(f"不支持的数据库类型: {config.type}")
     
     return adapter_class(config)

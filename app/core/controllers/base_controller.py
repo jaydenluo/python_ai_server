@@ -1,6 +1,7 @@
 """
 API控制器基类
 提供类似Laravel的优雅控制器设计
+包含常用的导入和装饰器，简化控制器开发
 """
 
 from abc import ABC, abstractmethod
@@ -12,6 +13,23 @@ from datetime import datetime
 
 from app.core.models.base import BaseModel
 from app.core.middleware.base import Request, Response
+
+# 导入常用的路由装饰器，供子类使用
+from app.core.routing.route_decorators import (
+    api_controller, get, post, put, delete, patch,
+    rate_limit, cache, validate, api_doc, cors,
+    # 中间件装饰器
+    anonymous, auth, admin, middleware,
+    # 简化的文档装饰器
+    doc, title, desc, get_list, get_detail, 
+    create_resource, update_resource, delete_resource,
+    # 权限装饰器
+    requires,
+    # 自动扫描功能
+    auto_discover_controllers, get_all_controllers,
+    # 路由组和资源路由
+    route_group, api_resource
+)
 
 
 class HTTPStatus(Enum):
@@ -192,3 +210,57 @@ class ResourceController(BaseController):
                 errors.append("请求数据不能为空")
         
         return errors
+
+
+# 导出所有常用的类和装饰器，方便子类一次性导入
+__all__ = [
+    # 基础类
+    'BaseController', 
+    'ResourceController', 
+    'APIResponse', 
+    'HTTPStatus',
+    'Request', 
+    'Response',
+    
+    # 路由装饰器
+    'api_controller', 
+    'get', 
+    'post', 
+    'put', 
+    'delete', 
+    'patch',
+    
+    # 中间件装饰器
+    'rate_limit', 
+    'cache', 
+    'validate', 
+    'api_doc', 
+    'cors',
+    'middleware',
+    
+    # 认证和权限装饰器
+    'anonymous',
+    'auth', 
+    'admin',
+    
+    # 简化的文档装饰器
+    'doc',
+    'title', 
+    'desc',
+    'get_list',
+    'get_detail',
+    'create_resource',
+    'update_resource',
+    'delete_resource',
+    
+    # 权限装饰器
+    'requires',
+    
+    # 自动扫描功能
+    'auto_discover_controllers',
+    'get_all_controllers',
+    
+    # 路由组和资源路由
+    'route_group',
+    'api_resource'
+]

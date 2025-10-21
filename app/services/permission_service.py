@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 from enum import Enum
 from dataclasses import dataclass
 
-from app.models.entities.user import User
+from app.models.entities.system.user_management import User
 from app.core.config.settings import config
 
 

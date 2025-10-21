@@ -7,7 +7,7 @@ from .route_decorators import (
     get, post, put, patch, delete, options, head,
     controller, route, HTTPMethod, RouteInfo
 )
-from .route_registry import RouteRegistry
+from .route_registry import FastAPIRouteRegistry as RouteRegistry
 
 __all__ = [
     "get", "post", "put", "patch", "delete", "options", "head",

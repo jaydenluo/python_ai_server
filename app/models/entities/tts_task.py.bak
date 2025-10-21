@@ -1,0 +1,127 @@
+"""
+TTS任务数据模型
+"""
+
+from datetime import datetime
+from typing import Optional, Dict, Any
+from sqlalchemy import Column, String, Text, Float, Boolean, Integer, DateTime, JSON
+from app.core.orm.models import BaseModel
+
+
+class TTSTask(BaseModel):
+    """TTS任务模型"""
+    
+    __tablename__ = "tts_tasks"
+    
+    # 基本信息
+    task_id = Column(String(36), primary_key=True, comment="任务ID")
+    user_id = Column(String(36), nullable=True, index=True, comment="用户ID")
+    
+    # 任务内容
+    text = Column(Text, nullable=False, comment="要合成的文本")
+    provider = Column(String(50), nullable=False, comment="TTS服务提供商")
+    voice = Column(String(50), nullable=False, comment="音色选择")
+    format = Column(String(10), nullable=False, comment="音频格式")
+    
+    # 音频参数
+    speed = Column(Float, default=1.0, comment="语速")
+    pitch = Column(Float, default=1.0, comment="音调")
+    volume = Column(Float, default=1.0, comment="音量")
+    
+    # 存储选项
+    save_to_server = Column(Boolean, default=True, comment="是否保存到服务器")
+    audio_path = Column(String(500), nullable=True, comment="音频文件路径")
+    audio_url = Column(String(500), nullable=True, comment="音频文件URL")
+    
+    # 任务状态
+    status = Column(String(20), default="pending", comment="任务状态")
+    error_message = Column(Text, nullable=True, comment="错误信息")
+    
+    # 文件信息
+    file_size = Column(Integer, nullable=True, comment="文件大小(字节)")
+    duration = Column(Float, nullable=True, comment="音频时长(秒)")
+    
+    # 时间信息
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+    started_at = Column(DateTime, nullable=True, comment="开始时间")
+    completed_at = Column(DateTime, nullable=True, comment="完成时间")
+    
+    # 扩展信息
+    metadata = Column(JSON, nullable=True, comment="扩展元数据")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "task_id": self.task_id,
+            "user_id": self.user_id,
+            "text": self.text,
+            "provider": self.provider,
+            "voice": self.voice,
+            "format": self.format,
+            "speed": self.speed,
+            "pitch": self.pitch,
+            "volume": self.volume,
+            "save_to_server": self.save_to_server,
+            "audio_path": self.audio_path,
+            "audio_url": self.audio_url,
+            "status": self.status,
+            "error_message": self.error_message,
+            "file_size": self.file_size,
+            "duration": self.duration,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "metadata": self.metadata
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TTSTask":
+        """从字典创建实例"""
+        task = cls()
+        for key, value in data.items():
+            if hasattr(task, key):
+                setattr(task, key, value)
+        return task
+    
+    def update_status(self, status: str, error_message: Optional[str] = None):
+        """更新任务状态"""
+        self.status = status
+        if error_message:
+            self.error_message = error_message
+        
+        if status == "processing" and not self.started_at:
+            self.started_at = datetime.utcnow()
+        elif status in ["completed", "failed", "cancelled"]:
+            self.completed_at = datetime.utcnow()
+    
+    def set_audio_info(self, audio_path: Optional[str] = None, 
+                      audio_url: Optional[str] = None,
+                      file_size: Optional[int] = None,
+                      duration: Optional[float] = None):
+        """设置音频信息"""
+        if audio_path:
+            self.audio_path = audio_path
+        if audio_url:
+            self.audio_url = audio_url
+        if file_size:
+            self.file_size = file_size
+        if duration:
+            self.duration = duration
+    
+    def is_completed(self) -> bool:
+        """检查任务是否完成"""
+        return self.status == "completed"
+    
+    def is_failed(self) -> bool:
+        """检查任务是否失败"""
+        return self.status == "failed"
+    
+    def is_processing(self) -> bool:
+        """检查任务是否处理中"""
+        return self.status == "processing"
+    
+    def get_processing_time(self) -> Optional[float]:
+        """获取处理时间(秒)"""
+        if self.started_at and self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds()
+        return None

@@ -119,6 +119,32 @@ class DatabaseManager:
             "adapter": adapter.__class__.__name__
         }
     
+    def get_connection_url(self) -> str:
+        """获取数据库连接URL（用于Alembic）"""
+        adapter = self.get_adapter()
+        if hasattr(adapter, 'get_connection_url'):
+            return adapter.get_connection_url()
+        else:
+            # 手动构建连接URL
+            db_type = self.config.type.value
+            if db_type == 'postgresql':
+                return f"postgresql://{self.config.username}:{self.config.password}@{self.config.host}:{self.config.port}/{self.config.database}"
+            elif db_type == 'mysql':
+                return f"mysql+pymysql://{self.config.username}:{self.config.password}@{self.config.host}:{self.config.port}/{self.config.database}"
+            elif db_type == 'sqlite':
+                return f"sqlite:///{self.config.database}"
+            else:
+                raise DatabaseConnectionError(f"不支持的数据库类型: {db_type}")
+    
+    @property
+    def engine(self):
+        """获取SQLAlchemy引擎（用于Alembic）"""
+        adapter = self.get_adapter()
+        if hasattr(adapter, 'engine'):
+            return adapter.engine
+        else:
+            raise DatabaseConnectionError("当前数据库适配器不支持SQLAlchemy引擎")
+    
     def test_connection(self) -> bool:
         """测试数据库连接"""
         try:

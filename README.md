@@ -2,6 +2,10 @@
 
 一个融合Laravel和RuoYi优点的Python AI开发框架，专门为人工智能项目提供API接口与AI能力。
 
+## 📚 快速开始
+
+**→ [API 开发指南](API_DEVELOPMENT_GUIDE.md)** - 完整的 API 开发教程（推荐从这里开始）
+
 ## 🚀 框架特性
 
 ### 核心特性
@@ -114,26 +118,25 @@ venv\Scripts\activate  # Windows
 
 # 安装依赖
 pip install -r requirements.txt
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 ```
 
 ### 配置环境
 
 ```bash
-# 复制环境配置文件
-cp .env.example .env
+# 复制配置文件模板
+cp config.example.yaml config.yaml
 
 # 编辑配置文件
-vim .env
+vim config.yaml
 ```
 
 ### 运行项目
 
 ```bash
-# 启动V2版本（注解路由，推荐）
-python main.py v2
 
-# 启动V1版本（传统路由）
-python main.py v1
+# 启动
+python main.py
 
 # 或使用Docker
 docker-compose up -d
@@ -281,39 +284,52 @@ prediction = client.predict_model(model_id, input_data)
 
 ## 🔧 配置说明
 
-### 数据库配置
+### 配置文件
 
-```python
-# config/database.py
-DATABASE_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "database": "ai_framework",
-    "username": "postgres",
-    "password": "password"
-}
+项目使用单一的 `config.yaml` 配置文件管理所有配置：
+
+```yaml
+# config.yaml
+app:
+  name: "Python AI Framework"
+  debug: true
+  port: 8000
+
+database:
+  type: "sqlite"  # postgresql, mysql, sqlite, mongodb
+  sqlite_path: "database.db"
+  auto_migrate: true  # 是否自动执行迁移
+
+redis:
+  host: "localhost"
+  port: 6379
+
+security:
+  secret_key: "your-secret-key"
 ```
 
-### Redis配置
+### 数据库迁移
 
-```python
-# config/redis.py
-REDIS_CONFIG = {
-    "host": "localhost",
-    "port": 6379,
-    "db": 0
-}
+```yaml
+# 开发环境 - 启用自动迁移
+database:
+  auto_migrate: true
+
+# 生产环境 - 禁用自动迁移
+database:
+  auto_migrate: false
 ```
 
-### AI配置
+### 环境变量（可选）
 
-```python
-# config/ai.py
-AI_CONFIG = {
-    "model_storage_path": "./models",
-    "max_model_size": 1024 * 1024 * 1024,  # 1GB
-    "supported_formats": ["pkl", "joblib", "onnx", "pt"]
-}
+仅用于敏感信息：
+
+```bash
+# 设置数据库密码
+export DB_PASSWORD=your-secure-password
+
+# 设置安全密钥
+export SECRET_KEY=your-secret-key
 ```
 
 ## 📚 文档

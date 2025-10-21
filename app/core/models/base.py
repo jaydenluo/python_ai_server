@@ -42,7 +42,7 @@ class BaseModel(Base, SerializationMixin, TimestampMixin):
         nullable=False,
         default=func.now(),
         onupdate=func.now(),
-        comment="更新时间"
+         comment="更新时间"
     )
     
     # 序列化配置

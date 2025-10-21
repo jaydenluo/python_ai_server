@@ -55,6 +55,9 @@ class DatabaseConfig:
     charset: str = "utf8mb4"
     collation: str = "utf8mb4_unicode_ci"
     
+    # 迁移配置
+    auto_migrate: bool = True  # 是否自动执行迁移
+    
     # SQLite 特殊配置
     sqlite_path: str = "database.db"
     
@@ -153,70 +156,24 @@ class Config:
         }
     
     def _load_environment_config(self):
-        """加载环境变量配置"""
-        # 应用配置
-        if os.getenv("APP_NAME"):
-            self._config["app"]["name"] = os.getenv("APP_NAME")
+        """加载环境变量配置（简化版，仅支持必要的环境变量）"""
+        # 只保留必要的环境变量支持
+        if os.getenv("ENVIRONMENT"):
+            env = os.getenv("ENVIRONMENT").lower()
+            if env in ["development", "testing", "staging", "production"]:
+                self.environment = Environment(env)
         
-        if os.getenv("DEBUG"):
-            self._config["app"]["debug"] = os.getenv("DEBUG").lower() == "true"
+        # 数据库密码（如果设置了环境变量）
+        if os.getenv("DB_PASSWORD"):
+            self._config["database"].password = os.getenv("DB_PASSWORD")
         
-        if os.getenv("HOST"):
-            self._config["app"]["host"] = os.getenv("HOST")
+        # Redis密码（如果设置了环境变量）
+        if os.getenv("REDIS_PASSWORD"):
+            self._config["redis"].password = os.getenv("REDIS_PASSWORD")
         
-        if os.getenv("PORT"):
-            self._config["app"]["port"] = int(os.getenv("PORT"))
-        
-        # 数据库配置
-        if os.getenv("DATABASE_URL"):
-            self._config["database"] = self._parse_database_url(os.getenv("DATABASE_URL"))
-        else:
-            # 数据库类型
-            if os.getenv("DB_TYPE"):
-                db_type = os.getenv("DB_TYPE").lower()
-                if db_type in [t.value for t in DatabaseType]:
-                    self._config["database"].type = DatabaseType(db_type)
-            
-            # 基础连接配置
-            if os.getenv("DB_HOST"):
-                self._config["database"].host = os.getenv("DB_HOST")
-            if os.getenv("DB_PORT"):
-                self._config["database"].port = int(os.getenv("DB_PORT"))
-            if os.getenv("DB_NAME"):
-                self._config["database"].database = os.getenv("DB_NAME")
-            if os.getenv("DB_USER"):
-                self._config["database"].username = os.getenv("DB_USER")
-            if os.getenv("DB_PASSWORD"):
-                self._config["database"].password = os.getenv("DB_PASSWORD")
-            
-            # SQLite 特殊配置
-            if os.getenv("SQLITE_PATH"):
-                self._config["database"].sqlite_path = os.getenv("SQLITE_PATH")
-            
-            # MongoDB 特殊配置
-            if os.getenv("MONGODB_AUTH_SOURCE"):
-                self._config["database"].mongodb_auth_source = os.getenv("MONGODB_AUTH_SOURCE")
-            if os.getenv("MONGODB_AUTH_MECHANISM"):
-                self._config["database"].mongodb_auth_mechanism = os.getenv("MONGODB_AUTH_MECHANISM")
-        
-        # Redis配置
-        if os.getenv("REDIS_URL"):
-            self._config["redis"] = self._parse_redis_url(os.getenv("REDIS_URL"))
-        else:
-            if os.getenv("REDIS_HOST"):
-                self._config["redis"].host = os.getenv("REDIS_HOST")
-            if os.getenv("REDIS_PORT"):
-                self._config["redis"].port = int(os.getenv("REDIS_PORT"))
-            if os.getenv("REDIS_PASSWORD"):
-                self._config["redis"].password = os.getenv("REDIS_PASSWORD")
-        
-        # 安全配置
+        # 安全密钥（如果设置了环境变量）
         if os.getenv("SECRET_KEY"):
             self._config["security"].secret_key = os.getenv("SECRET_KEY")
-        
-        # AI配置
-        if os.getenv("MODEL_STORAGE_PATH"):
-            self._config["ai"].model_storage_path = os.getenv("MODEL_STORAGE_PATH")
     
     def _load_file_config(self):
         """加载文件配置"""
@@ -254,7 +211,25 @@ class Config:
             if key in base_config and isinstance(base_config[key], dict) and isinstance(value, dict):
                 self._merge_config(base_config[key], value)
             else:
-                base_config[key] = value
+                # 特殊处理数据库配置
+                if key == "database" and isinstance(value, dict):
+                    # 将字典转换为DatabaseConfig对象
+                    db_config = base_config[key]
+                    if isinstance(db_config, DatabaseConfig):
+                        # 更新现有DatabaseConfig对象的属性
+                        for attr_name, attr_value in value.items():
+                            if hasattr(db_config, attr_name):
+                                # 处理特殊类型转换
+                                if attr_name == "type" and isinstance(attr_value, str):
+                                    try:
+                                        attr_value = DatabaseType(attr_value)
+                                    except ValueError:
+                                        pass  # 保持原值
+                                setattr(db_config, attr_name, attr_value)
+                    else:
+                        base_config[key] = value
+                else:
+                    base_config[key] = value
     
     def _parse_database_url(self, url: str) -> DatabaseConfig:
         """解析数据库URL"""

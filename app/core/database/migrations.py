@@ -1,286 +1,292 @@
 """
-数据库迁移系统
-支持多种数据库的迁移管理
+数据库迁移模块
+基于 Alembic 的迁移系统集成
 """
 
-import os
-import json
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+import subprocess
+import sys
 from pathlib import Path
-from sqlalchemy import text, inspect
-from sqlalchemy.orm import Session
-
-from app.core.database.connection_manager import get_database_manager
-from app.core.database.exceptions import DatabaseMigrationError
+from typing import Optional, Dict, Any
+from app.core.config.settings import config
 
 
-class Migration:
-    """迁移类"""
+def migrate(revision: str = "head") -> bool:
+    """
+    执行数据库迁移
     
-    def __init__(self, version: str, name: str, up_sql: str, down_sql: str = ""):
-        self.version = version
-        self.name = name
-        self.up_sql = up_sql
-        self.down_sql = down_sql
-        self.created_at = datetime.now()
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
-        return {
-            "version": self.version,
-            "name": self.name,
-            "up_sql": self.up_sql,
-            "down_sql": self.down_sql,
-            "created_at": self.created_at.isoformat()
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Migration':
-        """从字典创建迁移"""
-        migration = cls(
-            version=data["version"],
-            name=data["name"],
-            up_sql=data["up_sql"],
-            down_sql=data.get("down_sql", "")
-        )
-        migration.created_at = datetime.fromisoformat(data["created_at"])
-        return migration
-
-
-class MigrationManager:
-    """迁移管理器"""
-    
-    def __init__(self, migrations_dir: str = "migrations"):
-        self.migrations_dir = Path(migrations_dir)
-        self.migrations_dir.mkdir(exist_ok=True)
-        self.db_manager = get_database_manager()
-    
-    def create_migration(self, name: str, up_sql: str, down_sql: str = "") -> Migration:
-        """创建迁移"""
-        version = datetime.now().strftime("%Y%m%d_%H%M%S")
-        migration = Migration(version, name, up_sql, down_sql)
+    Args:
+        revision: 目标版本，默认为 "head"（最新版本）
         
-        # 保存迁移文件
-        migration_file = self.migrations_dir / f"{version}_{name}.json"
-        with open(migration_file, 'w', encoding='utf-8') as f:
-            json.dump(migration.to_dict(), f, ensure_ascii=False, indent=2)
+    Returns:
+        bool: 迁移是否成功
+    """
+    try:
+        print(f"🔄 执行数据库迁移到版本: {revision}")
         
-        return migration
-    
-    def load_migrations(self) -> List[Migration]:
-        """加载所有迁移"""
-        migrations = []
+        # 获取 Alembic 可执行文件路径
+        alembic_path = _get_alembic_path()
+        if not alembic_path:
+            print("❌ 找不到 Alembic 可执行文件")
+            return False
         
-        for migration_file in self.migrations_dir.glob("*.json"):
-            try:
-                with open(migration_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    migrations.append(Migration.from_dict(data))
-            except Exception as e:
-                print(f"警告: 无法加载迁移文件 {migration_file}: {e}")
+        # 执行迁移命令
+        cmd = [str(alembic_path), "upgrade", revision]
+        result = subprocess.run(cmd, cwd=Path(__file__).parent.parent.parent.parent, capture_output=True, text=True)
         
-        # 按版本排序
-        migrations.sort(key=lambda m: m.version)
-        return migrations
-    
-    def get_applied_migrations(self) -> List[str]:
-        """获取已应用的迁移版本"""
-        with self.db_manager.get_session() as session:
-            # 检查迁移表是否存在
-            if not self._migration_table_exists(session):
-                self._create_migration_table(session)
-            
-            result = session.execute(text("SELECT version FROM migrations ORDER BY version"))
-            return [row[0] for row in result.fetchall()]
-    
-    def _migration_table_exists(self, session: Session) -> bool:
-        """检查迁移表是否存在"""
-        inspector = inspect(session.bind)
-        tables = inspector.get_table_names()
-        return "migrations" in tables
-    
-    def _create_migration_table(self, session: Session):
-        """创建迁移表"""
-        # 根据数据库类型创建不同的迁移表
-        db_type = self.db_manager.config.type.value
-        
-        if db_type == "postgresql":
-            create_table_sql = """
-            CREATE TABLE IF NOT EXISTS migrations (
-                id SERIAL PRIMARY KEY,
-                version VARCHAR(255) UNIQUE NOT NULL,
-                name VARCHAR(255) NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        elif db_type == "mysql":
-            create_table_sql = """
-            CREATE TABLE IF NOT EXISTS migrations (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                version VARCHAR(255) UNIQUE NOT NULL,
-                name VARCHAR(255) NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        elif db_type == "sqlite":
-            create_table_sql = """
-            CREATE TABLE IF NOT EXISTS migrations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                version TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
+        if result.returncode == 0:
+            print("✅ 数据库迁移成功")
+            return True
         else:
-            # 默认使用通用SQL
-            create_table_sql = """
-            CREATE TABLE IF NOT EXISTS migrations (
-                id INTEGER PRIMARY KEY,
-                version VARCHAR(255) UNIQUE NOT NULL,
-                name VARCHAR(255) NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        
-        session.execute(text(create_table_sql))
-        session.commit()
+            print(f"❌ 数据库迁移失败: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 迁移过程中发生错误: {e}")
+        return False
+
+
+def migration_status() -> Dict[str, Any]:
+    """
+    获取迁移状态
     
-    def apply_migration(self, migration: Migration):
-        """应用迁移"""
-        with self.db_manager.get_session() as session:
+    Returns:
+        Dict[str, Any]: 迁移状态信息
+    """
+    try:
+        # 获取 Alembic 可执行文件路径
+        alembic_path = _get_alembic_path()
+        if not alembic_path:
+            return {
+                "status": "error",
+                "message": "找不到 Alembic 可执行文件",
+                "current_revision": None,
+                "available_revisions": []
+            }
+        
+        # 获取当前版本
+        current_result = subprocess.run(
+            [str(alembic_path), "current"], 
+            cwd=Path(__file__).parent.parent.parent.parent,
+            capture_output=True, text=True
+        )
+        
+        # 获取历史版本
+        history_result = subprocess.run(
+            [str(alembic_path), "history", "--verbose"], 
+            cwd=Path(__file__).parent.parent.parent.parent,
+            capture_output=True, text=True
+        )
+        
+        current_revision = None
+        if current_result.returncode == 0:
+            current_output = current_result.stdout.strip()
+            if current_output:
+                # 解析当前版本信息
+                lines = current_output.split('\n')
+                for line in lines:
+                    if 'Rev:' in line:
+                        current_revision = line.split('Rev:')[1].strip().split()[0]
+                        break
+        
+        available_revisions = []
+        if history_result.returncode == 0:
+            # 解析历史版本信息
+            history_output = history_result.stdout
+            lines = history_output.split('\n')
+            for line in lines:
+                if 'Rev:' in line and 'Parent:' in line:
+                    revision_info = line.strip()
+                    available_revisions.append(revision_info)
+        
+        return {
+            "status": "success",
+            "current_revision": current_revision,
+            "available_revisions": available_revisions,
+            "current_output": current_result.stdout if current_result.returncode == 0 else None,
+            "history_output": history_result.stdout if history_result.returncode == 0 else None
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"获取迁移状态时发生错误: {e}",
+            "current_revision": None,
+            "available_revisions": []
+        }
+
+
+def create_migration(message: str = "auto migration") -> bool:
+    """
+    创建新的迁移文件
+    
+    Args:
+        message: 迁移描述信息
+        
+    Returns:
+        bool: 创建是否成功
+    """
+    try:
+        print(f"📝 创建迁移文件: {message}")
+        
+        # 获取 Alembic 可执行文件路径
+        alembic_path = _get_alembic_path()
+        if not alembic_path:
+            print("❌ 找不到 Alembic 可执行文件")
+            return False
+        
+        # 执行创建迁移命令
+        cmd = [str(alembic_path), "revision", "--autogenerate", "-m", message]
+        result = subprocess.run(cmd, cwd=Path(__file__).parent.parent.parent.parent, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("✅ 迁移文件创建成功")
+            print(f"输出: {result.stdout}")
+            return True
+        else:
+            print(f"❌ 迁移文件创建失败: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 创建迁移文件时发生错误: {e}")
+        return False
+
+
+def _get_alembic_path() -> Optional[Path]:
+    """
+    获取 Alembic 可执行文件路径
+    
+    Returns:
+        Optional[Path]: Alembic 可执行文件路径，如果找不到则返回 None
+    """
+    # 尝试多个可能的路径
+    possible_paths = [
+        # 项目根目录下的 .conda 环境
+        Path(__file__).parent.parent.parent.parent / ".conda" / "Scripts" / "alembic.exe",
+        Path(__file__).parent.parent.parent.parent / ".conda" / "bin" / "alembic",
+        # 系统路径中的 alembic
+        Path("alembic"),
+        # 使用 python -m alembic
+        None  # 特殊标记，表示使用 python -m alembic
+    ]
+    
+    for path in possible_paths:
+        if path is None:
+            # 尝试使用 python -m alembic
             try:
-                # 执行迁移SQL
-                if migration.up_sql:
-                    session.execute(text(migration.up_sql))
-                
-                # 记录迁移
-                session.execute(text(
-                    "INSERT INTO migrations (version, name) VALUES (:version, :name)"
-                ), {"version": migration.version, "name": migration.name})
-                
-                session.commit()
-                print(f"✅ 迁移 {migration.version}_{migration.name} 应用成功")
-                
-            except Exception as e:
-                session.rollback()
-                raise DatabaseMigrationError(f"迁移 {migration.version}_{migration.name} 应用失败: {e}")
+                result = subprocess.run([sys.executable, "-m", "alembic", "--version"], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    return None  # 返回 None 表示使用 python -m alembic
+            except:
+                continue
+        elif path.exists() and path.is_file():
+            return path
     
-    def rollback_migration(self, migration: Migration):
-        """回滚迁移"""
-        with self.db_manager.get_session() as session:
-            try:
-                # 执行回滚SQL
-                if migration.down_sql:
-                    session.execute(text(migration.down_sql))
-                
-                # 删除迁移记录
-                session.execute(text(
-                    "DELETE FROM migrations WHERE version = :version"
-                ), {"version": migration.version})
-                
-                session.commit()
-                print(f"✅ 迁移 {migration.version}_{migration.name} 回滚成功")
-                
-            except Exception as e:
-                session.rollback()
-                raise DatabaseMigrationError(f"迁移 {migration.version}_{migration.name} 回滚失败: {e}")
+    return None
+
+
+def _run_alembic_command(*args) -> subprocess.CompletedProcess:
+    """
+    运行 Alembic 命令
     
-    def migrate(self):
-        """执行所有未应用的迁移"""
-        migrations = self.load_migrations()
-        applied_migrations = self.get_applied_migrations()
+    Args:
+        *args: Alembic 命令参数
         
-        pending_migrations = [
-            m for m in migrations 
-            if m.version not in applied_migrations
-        ]
-        
-        if not pending_migrations:
-            print("✅ 所有迁移都已应用")
-            return
-        
-        print(f"📦 发现 {len(pending_migrations)} 个待应用迁移")
-        
-        for migration in pending_migrations:
-            print(f"🔄 应用迁移: {migration.version}_{migration.name}")
-            self.apply_migration(migration)
+    Returns:
+        subprocess.CompletedProcess: 命令执行结果
+    """
+    alembic_path = _get_alembic_path()
     
-    def rollback(self, steps: int = 1):
-        """回滚指定数量的迁移"""
-        migrations = self.load_migrations()
-        applied_migrations = self.get_applied_migrations()
-        
-        # 获取已应用的迁移
-        applied_migration_objects = [
-            m for m in migrations 
-            if m.version in applied_migrations
-        ]
-        
-        # 按版本倒序排列，回滚最新的迁移
-        applied_migration_objects.sort(key=lambda m: m.version, reverse=True)
-        
-        rollback_count = min(steps, len(applied_migration_objects))
-        
-        if rollback_count == 0:
-            print("✅ 没有可回滚的迁移")
-            return
-        
-        print(f"🔄 回滚 {rollback_count} 个迁移")
-        
-        for i in range(rollback_count):
-            migration = applied_migration_objects[i]
-            print(f"🔄 回滚迁移: {migration.version}_{migration.name}")
-            self.rollback_migration(migration)
+    if alembic_path is None:
+        # 使用 python -m alembic
+        cmd = [sys.executable, "-m", "alembic"] + list(args)
+    else:
+        # 使用直接路径
+        cmd = [str(alembic_path)] + list(args)
     
-    def status(self):
-        """显示迁移状态"""
-        migrations = self.load_migrations()
-        applied_migrations = self.get_applied_migrations()
+    return subprocess.run(cmd, cwd=Path(__file__).parent.parent.parent.parent, 
+                         capture_output=True, text=True)
+
+
+# 为了向后兼容，提供一些别名函数
+def upgrade(revision: str = "head") -> bool:
+    """升级数据库到指定版本（migrate 的别名）"""
+    return migrate(revision)
+
+
+def downgrade(revision: str = "-1") -> bool:
+    """
+    降级数据库到指定版本
+    
+    Args:
+        revision: 目标版本，默认为 "-1"（上一个版本）
         
-        print("📊 迁移状态:")
-        print(f"总迁移数: {len(migrations)}")
-        print(f"已应用: {len(applied_migrations)}")
-        print(f"待应用: {len(migrations) - len(applied_migrations)}")
-        print()
+    Returns:
+        bool: 降级是否成功
+    """
+    try:
+        print(f"⬇️ 降级数据库到版本: {revision}")
         
-        print("📋 迁移列表:")
-        for migration in migrations:
-            status = "✅ 已应用" if migration.version in applied_migrations else "⏳ 待应用"
-            print(f"  {migration.version}_{migration.name} - {status}")
+        result = _run_alembic_command("downgrade", revision)
+        
+        if result.returncode == 0:
+            print("✅ 数据库降级成功")
+            return True
+        else:
+            print(f"❌ 数据库降级失败: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 降级过程中发生错误: {e}")
+        return False
 
 
-# 全局迁移管理器实例
-_migration_manager: Optional[MigrationManager] = None
+def current() -> Optional[str]:
+    """
+    获取当前数据库版本
+    
+    Returns:
+        Optional[str]: 当前版本号，如果获取失败则返回 None
+    """
+    try:
+        result = _run_alembic_command("current")
+        
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            if output:
+                # 解析当前版本信息
+                lines = output.split('\n')
+                for line in lines:
+                    if 'Rev:' in line:
+                        return line.split('Rev:')[1].strip().split()[0]
+        
+        return None
+        
+    except Exception as e:
+        print(f"❌ 获取当前版本时发生错误: {e}")
+        return None
 
 
-def get_migration_manager() -> MigrationManager:
-    """获取全局迁移管理器实例"""
-    global _migration_manager
-    if _migration_manager is None:
-        _migration_manager = MigrationManager()
-    return _migration_manager
-
-
-def create_migration(name: str, up_sql: str, down_sql: str = "") -> Migration:
-    """创建迁移"""
-    manager = get_migration_manager()
-    return manager.create_migration(name, up_sql, down_sql)
-
-
-def migrate():
-    """执行迁移"""
-    manager = get_migration_manager()
-    manager.migrate()
-
-
-def rollback(steps: int = 1):
-    """回滚迁移"""
-    manager = get_migration_manager()
-    manager.rollback(steps)
-
-
-def migration_status():
-    """显示迁移状态"""
-    manager = get_migration_manager()
-    manager.status()
+def history() -> list:
+    """
+    获取迁移历史
+    
+    Returns:
+        list: 迁移历史列表
+    """
+    try:
+        result = _run_alembic_command("history", "--verbose")
+        
+        if result.returncode == 0:
+            history_list = []
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'Rev:' in line and 'Parent:' in line:
+                    history_list.append(line.strip())
+            return history_list
+        
+        return []
+        
+    except Exception as e:
+        print(f"❌ 获取迁移历史时发生错误: {e}")
+        return []

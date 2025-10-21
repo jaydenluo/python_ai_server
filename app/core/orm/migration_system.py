@@ -13,7 +13,8 @@ from enum import Enum
 import inspect
 from pathlib import Path
 
-from app.models.base import Model
+# 移除循环导入，使用Any类型
+from typing import Any
 from app.core.config.settings import config
 
 
@@ -71,15 +72,15 @@ class ModelAnalyzer:
     """模型分析器"""
     
     def __init__(self):
-        self.models: Dict[str, Type[Model]] = {}
+        self.models: Dict[str, Any] = {}
         self.schema_cache: Dict[str, TableDefinition] = {}
     
-    def register_model(self, model_class: Type[Model]):
+    def register_model(self, model_class: Any):
         """注册模型"""
         table_name = getattr(model_class, '__table__', model_class.__name__.lower())
         self.models[table_name] = model_class
     
-    def analyze_model(self, model_class: Type[Model]) -> TableDefinition:
+    def analyze_model(self, model_class: Any) -> TableDefinition:
         """分析模型结构"""
         table_name = getattr(model_class, '__table__', model_class.__name__.lower())
         
@@ -105,7 +106,7 @@ class ModelAnalyzer:
             timestamps=getattr(model_class, '__timestamps__', True)
         )
     
-    def _parse_column_definition(self, name: str, annotation: Any, model_class: Type[Model]) -> ColumnDefinition:
+    def _parse_column_definition(self, name: str, annotation: Any, model_class: Any) -> ColumnDefinition:
         """解析列定义"""
         # 基础类型映射
         type_mapping = {
@@ -380,7 +381,7 @@ class SmartMigrationManager:
         self.generator = MigrationGenerator()
         self.sql_generator = SQLGenerator()
     
-    def detect_changes(self, model_classes: List[Type[Model]]) -> List[Migration]:
+    def detect_changes(self, model_classes: List[Any]) -> List[Migration]:
         """检测模型变更"""
         migrations = []
         
@@ -407,7 +408,7 @@ class SmartMigrationManager:
         
         return generated_files
     
-    def auto_migrate(self, model_classes: List[Type[Model]], dry_run: bool = True) -> Dict[str, Any]:
+    def auto_migrate(self, model_classes: List[Any], dry_run: bool = True) -> Dict[str, Any]:
         """自动迁移"""
         result = {
             "detected_changes": [],

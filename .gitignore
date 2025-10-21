@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+database.db
+
+# 配置文件（敏感信息）
+.env
+config.yaml
+!config.example.yaml
+
+# 日志
+*.log
+logs/
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# 迁移文件（仅保留版本控制中的）
+alembic/versions/__pycache__/
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# AI 模型文件
+models/*.pt
+models/*.pth
+models/*.onnx
+*.pkl
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 文档生成
+docs/_build/
+site/
+

@@ -1,17 +1,10 @@
 """
-业务服务
+业务服务模块
 提供认证、AI、用户等业务逻辑
+使用智能导入，自动发现所有服务类
 """
 
-from .base_service import BaseService
-from .auth_service import AuthService, AuthResponse, AuthResult
-from .permission_service import PermissionService, PermissionResponse
+from app.core.discovery.module_hooks import setup_smart_import
 
-__all__ = [
-    "BaseService",
-    "AuthService",
-    "AuthResponse", 
-    "AuthResult",
-    "PermissionService",
-    "PermissionResponse"
-]
+# 设置智能导入 - 只需要这两行代码！
+__getattr__, __dir__ = setup_smart_import(__name__)

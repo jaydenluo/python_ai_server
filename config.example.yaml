@@ -1,0 +1,74 @@
+# 配置文件示例
+# 复制此文件为 config.yaml 并根据需要修改配置
+
+app:
+  name: "Python AI Framework"
+  version: "2.0.0"
+  debug: true
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+
+# 数据库配置
+database:
+  type: "sqlite"  # postgresql, mysql, sqlite, mongodb
+  host: "localhost"
+  port: 5432
+  database: "ai_framework"
+  username: "postgres"
+  password: "your_password_here"
+  sqlite_path: "database.db"
+  auto_migrate: true  # 是否自动执行迁移
+
+# Redis配置
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+
+# 安全配置
+security:
+  secret_key: "your-secret-key-change-this-in-production"
+  jwt_algorithm: "HS256"
+  jwt_expire_hours: 24
+
+# AI配置
+ai:
+  model_storage_path: "./models"
+  max_model_size: 1073741824  # 1GB
+  inference_timeout: 30
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 限流配置
+rate_limit:
+  enabled: true
+  requests_per_minute: 60
+  requests_per_hour: 1000
+  requests_per_day: 10000
+
+# CORS配置
+cors:
+  allow_origins: ["*"]
+  allow_credentials: true
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+# 中间件配置
+middleware:
+  auth:
+    secret_key: "your-auth-secret-key"
+    algorithm: "HS256"
+    token_expire_hours: 24
+  logging:
+    logger_name: "fastapi"
+    log_level: "INFO"
+  rate_limit:
+    requests_per_minute: 60
+    requests_per_hour: 1000
+    requests_per_day: 10000
+    burst_limit: 100

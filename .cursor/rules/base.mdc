@@ -1,0 +1,58 @@
+---
+alwaysApply: true
+---
+
+# 控制器规范
+
+## 命名规则
+
+| 项目 | 规则 | 示例 |
+|------|------|------|
+| 文件名 | `{资源名}_controller.py` | `user_controller.py` |
+| 类名 | `{资源名}Controller` | `UserController` |
+| 路径 | `/{分组}/{资源名}` | `/api/user` |
+| 标签 | `{分组}API - {功能}` | `API - 用户管理` |
+
+## API分组
+
+| 分组 | 前缀 | 标签 |
+|------|------|------|
+| AdminAPI | `/admin/*` | `AdminAPI - {功能}` |
+| API | `/api/*` | `API - {功能}` |
+| WebAPI | `/web/*` | `WebAPI - {功能}` |
+
+## 示例
+
+```python
+# app/controller/api/user_controller.py
+from app.core.controllers.base_controller import *
+
+@api_controller(prefix="/api/user", tags=["API - 用户管理"])
+class UserController(BaseController):
+    
+    @get("/list", summary="获取列表")
+    async def get_users(self, request: Request) -> Response:
+        pass
+    
+    @post("/create", summary="创建")
+    async def create_user(self, request: Request) -> Response:
+        pass
+    
+    @put("/{id}", summary="更新")
+    async def update_user(self, request: Request, id: str) -> Response:
+        pass
+    
+    @delete("/{id}", summary="删除")
+    async def delete_user(self, request: Request, id: str) -> Response:
+        pass
+```
+
+## RESTful
+
+| 操作 | 方法 | 路径 |
+|------|------|------|
+| 列表 | GET | `/list` |
+| 详情 | GET | `/{id}` |
+| 创建 | POST | `/create` |
+| 更新 | PUT | `/{id}` |
+| 删除 | DELETE | `/{id}` |

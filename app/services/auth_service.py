@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 
-from app.models.entities.user import User
+from app.models.entities.system.user_management import User
 from app.core.config.settings import config
 
 
